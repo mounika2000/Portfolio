@@ -75,51 +75,69 @@ console.log('Env check:', {
   
     try {
       // Add user question first
-      setMessages(prev => [...prev, { 
-        type: 'user', 
-        content: question, 
-        fullContent: question 
+      setMessages(prev => [...prev, {
+        type: 'user',
+        content: question,
+        fullContent: question
       }]);
   
       setIsTyping(true);
   
       // First check for predefined responses
       const predefinedResponse = portfolioData[
-        Object.keys(portfolioData).find(key => 
-          portfolioData[key].response && 
+        Object.keys(portfolioData).find(key =>
+          portfolioData[key].response &&
           question.toLowerCase().includes(key.toLowerCase())
         )
       ]?.response;
   
       if (predefinedResponse) {
-        setMessages(prev => [...prev, { 
-          type: 'assistant', 
-          content: '', 
-          fullContent: predefinedResponse 
+        setMessages(prev => [...prev, {
+          type: 'assistant',
+          content: '',
+          fullContent: predefinedResponse
         }]);
         setCurrentlyTyping(messages.length + 1);
       } else {
-        // Call the Netlify serverless function instead of OpenAI directly
-        const response = await fetch('/.netlify/functions/chatbot', {
+        // Use a CORS proxy to bypass CORS issues
+        const response = await fetch('https://cors-anywhere.herokuapp.com/https://api.openai.com/v1/chat/completions', {
           method: 'POST',
           headers: {
-            'Content-Type': 'application/json'
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${process.env.REACT_APP_OPENAI_API_KEY}`  // Replace with your OpenAI API Key if necessary
           },
-          body: JSON.stringify({ question })
+          body: JSON.stringify({
+            model: "gpt-3.5-turbo",
+            messages: [
+              { role: "system", content: "You are Sai Mounika's portfolio assistant." },
+              { role: "user", content: question }
+            ],
+            temperature: 0.7,
+            max_tokens: 150
+          })
         });
   
-        const data = await response.json();
+        // Check if the response is JSON
+        const contentType = response.headers.get('content-type');
   
-        if (data.error) {
-          throw new Error(data.error);
+        if (contentType && contentType.includes('application/json')) {
+          const data = await response.json();
+  
+          if (data.error) throw new Error(data.error.message);
+  
+          setMessages(prev => [...prev, {
+            type: 'assistant',
+            content: '',
+            fullContent: data.choices[0].message.content
+          }]);
+          setCurrentlyTyping(messages.length + 1);
+  
+        } else {
+          // Handle non-JSON responses (like CORS errors)
+          const errorText = await response.text();
+          console.error('Non-JSON Response:', errorText);
+          throw new Error('Non-JSON response received. Possible CORS error.');
         }
-  
-        setMessages(prev => [...prev, { 
-          type: 'assistant', 
-          content: '', 
-          fullContent: data.response 
-        }]);
-        setCurrentlyTyping(messages.length + 1);
       }
   
     } catch (error) {
@@ -132,6 +150,7 @@ console.log('Env check:', {
       }]);
     }
   };
+  
   
 
   // Typing animation effect
